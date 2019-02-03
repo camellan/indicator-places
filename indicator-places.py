@@ -7,12 +7,13 @@
 #
 
 import os
-import gtk
-import gio
+import gi
+gi.require_version('Gtk', '3.0')
+gi.require_version('AppIndicator3', '0.1')
+from gi.repository import Gtk, Gio, AppIndicator3
 import signal
 import subprocess
-import appindicator
-import urllib
+import urllib.request, urllib.parse, urllib.error
 
 APP_NAME = 'indicator-places'
 APP_VERSION = '0.5'
@@ -21,70 +22,69 @@ class IndicatorPlaces:
     BOOKMARKS_PATH = os.getenv('HOME') + '/.config/gtk-3.0/bookmarks'
 
     def __init__(self):
-        #self.ind = appindicator.Indicator("places", "nautilus", appindicator.CATEGORY_APPLICATION_STATUS)
-        self.ind = appindicator.Indicator("places", "system-file-manager", appindicator.CATEGORY_APPLICATION_STATUS)
-        self.ind.set_status(appindicator.STATUS_ACTIVE)        
+        self.ind = AppIndicator3.Indicator.new("places", "system-file-manager", AppIndicator3.IndicatorCategory.APPLICATION_STATUS)
+        self.ind.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
 
         self.update_menu()
 
     def create_menu_item(self, label, icon_name):
-        image = gtk.Image()
+        image = Gtk.Image()
         image.set_from_icon_name(icon_name, 24)
 
-        item = gtk.ImageMenuItem()
+        item = Gtk.ImageMenuItem()
         item.set_label(label)
         item.set_image(image)
         item.set_always_show_image(True)
         return item
-    
+
     # This method gets a themed icon name
     def get_bookmark_icon(self, path):
         if path.startswith("smb") or path.startswith("ssh") or path.startswith("ftp") or path.startswith("network"):
-            icon_name = "folder-remote"    
+            icon_name = "folder-remote"
         else:
-            f = gio.File(path)
-            try:   
-                info = f.query_info(gio.FILE_ATTRIBUTE_STANDARD_ICON)
+            f = Gio.File.new_for_path(path)
+            try:
+                info = f.query_info(Gio.FILE_ATTRIBUTE_STANDARD_ICON)
                 icon = info.get_icon()
                 icon_name = icon.get_names()[0] if icon.get_names()[0] != '(null)' else 'folder'
-            except (gio.Error, NameError):
+            except:
                 icon_name = "folder"
-        
+
         return icon_name
-    
+
     # This methind creates a menu
     def update_menu(self, widget = None, data = None):
         try:
             bookmarks = open(self.BOOKMARKS_PATH).readlines()
         except IOError:
-            bookmarks = []        
+            bookmarks = []
 
         # Create menu
-        menu = gtk.Menu()
+        menu = Gtk.Menu()
         self.ind.set_menu(menu)
 
         # Home folder menu item
-        item = self.create_menu_item("Home Folder", "user-home") 
+        item = self.create_menu_item("Home Folder", "user-home")
         item.connect("activate", self.on_bookmark_click, os.getenv('HOME'))
         menu.append(item)
 
         # Computer menu item
         item = self.create_menu_item("Computer", "computer" )
-        item.connect("activate", self.on_bookmark_click, 'computer:')
+        item.connect("activate", self.on_bookmark_click, '/')
         menu.append(item)
 
         # Computer menu item
         item = self.create_menu_item("Network", "network-workgroup")
-        item.connect("activate", self.on_bookmark_click, 'network:')
+        item.connect("activate", self.on_bookmark_click, 'network://')
         menu.append(item)
 
         # Trash
         item = self.create_menu_item("Trash", "user-trash")
-        item.connect("activate", self.on_bookmark_click, 'trash:')
+        item.connect("activate", self.on_bookmark_click, 'trash:///')
         menu.append(item)
 
         # Show separator
-        item = gtk.SeparatorMenuItem()
+        item = Gtk.SeparatorMenuItem()
         menu.append(item)
 
         # Populate bookmarks menu items
@@ -94,7 +94,7 @@ class IndicatorPlaces:
             if not label:
                 label = os.path.basename(os.path.normpath(path))
 
-            label = urllib.unquote(label)
+            label = urllib.parse.unquote(label)
             item = self.create_menu_item(label, self.get_bookmark_icon(path))
             item.connect("activate", self.on_bookmark_click, path)
 
@@ -102,12 +102,12 @@ class IndicatorPlaces:
             menu.append(item)
 
         # Show separator
-        item = gtk.SeparatorMenuItem()
+        item = Gtk.SeparatorMenuItem()
         menu.append(item)
 
         # Quit menu item
         item = self.create_menu_item("Quit", "gtk-quit")
-        item.connect("activate", gtk.main_quit)
+        item.connect("activate", Gtk.main_quit)
         menu.append(item)
 
         # Show the menu
@@ -118,23 +118,23 @@ class IndicatorPlaces:
         #subprocess.Popen('/usr/bin/nautilus %s' % path, shell = True)
         subprocess.Popen('/usr/bin/xdg-open %s' % path, shell = True)
 
-        
+
     def on_bookmarks_changed(self, filemonitor, file, other_file, event_type):
-        if event_type == gio.FILE_MONITOR_EVENT_CHANGES_DONE_HINT:
-            print 'Bookmarks changed, updating menu...'
+        if event_type == Gio.FILE_MONITOR_EVENT_CHANGES_DONE_HINT:
+            print('Bookmarks changed, updating menu...')
             self.update_menu()
 
 if __name__ == "__main__":
     # Catch CTRL-C
-    signal.signal(signal.SIGINT, lambda signal, frame: gtk.main_quit())
+    signal.signal(signal.SIGINT, lambda signal, frame: Gtk.main_quit())
 
     # Run the indicator
     i = IndicatorPlaces()
-    
-    # Monitor bookmarks changes 
-    file = gio.File(i.BOOKMARKS_PATH)
-    monitor = file.monitor_file()
-    monitor.connect("changed", i.on_bookmarks_changed)            
-    
+
+    # Monitor bookmarks changes
+    file = Gio.File.new_for_path(i.BOOKMARKS_PATH)
+    monitor = file.monitor_file(0, None)
+    monitor.connect("changed", i.on_bookmarks_changed)
+
     # Main gtk loop
-    gtk.main()
+    Gtk.main()
